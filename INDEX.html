@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitApp Pro - Gestão de Alunos</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #10b981;
+            --danger: #ef4444;
+            --dark: #0f172a;
+            --gray: #64748b;
+            --bg: #f8fafc;
+        }
+
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); margin: 0; color: var(--dark); }
+        .hidden { display: none !important; }
+
+        /* --- UI COMPONENTS --- */
+        .card { background: white; padding: 1.5rem; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; box-sizing: border-box; }
+        input, select, textarea { width: 100%; padding: 12px; margin: 8px 0 16px 0; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; }
+        
+        button { padding: 12px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .btn-main { background: var(--primary); color: white; width: 100%; }
+        .btn-danger { background: var(--danger); color: white; width: auto; padding: 6px 12px; font-size: 12px; }
+        
+        header { background: white; padding: 1rem 5%; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; }
+        main { padding: 2rem 5%; max-width: 1100px; margin: 0 auto; }
+
+        /* --- LAYOUT --- */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+        @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } }
+
+        .item-card { background: white; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 15px; position: relative; }
+        .status-badge { font-size: 10px; padding: 4px 8px; border-radius: 20px; font-weight: bold; text-transform: uppercase; float: right; }
+        .status-pendente { background: #fee2e2; color: var(--danger); }
+        .status-concluido { background: #dcfce7; color: var(--secondary); }
+
+        /* Tabela de Alunos */
+        .aluno-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #f1f5f9; }
+        .aluno-row:last-child { border-bottom: none; }
+    </style>
+</head>
+<body>
+
+    <div id="login-page" style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+        <div class="card" style="max-width: 350px;">
+            <h2 style="text-align: center;">🏋️ FitApp Pro</h2>
+            <input type="text" id="user-input" placeholder="Usuário">
+            <input type="password" id="pass-input" placeholder="Senha">
+            <button class="btn-main" onclick="autenticar()">Entrar</button>
+            <p style="text-align: center; font-size: 11px; color: var(--gray); margin-top: 15px;">Admin: <b>admin</b> / 123</p>
+        </div>
+    </div>
+
+    <div id="app-content" class="hidden">
+        <header>
+            <strong id="user-display">Painel</strong>
+            <button onclick="location.reload()" style="width: auto; background: #94a3b8; color: white;">Sair</button>
+        </header>
+
+        <main>
+            <div id="view-coach" class="hidden">
+                <div class="grid">
+                    <div>
+                        <div class="card" style="margin-bottom: 20px;">
+                            <h3>👤 Cadastrar Novo Aluno</h3>
+                            <input type="text" id="reg-name" placeholder="Nome Completo">
+                            <input type="text" id="reg-user" placeholder="Nome de Usuário (Login)">
+                            <input type="password" id="reg-pass" placeholder="Senha">
+                            <button class="btn-main" onclick="cadastrarUsuario()">Criar Conta</button>
+                        </div>
+
+                        <div class="card">
+                            <h3>👥 Alunos Cadastrados</h3>
+                            <div id="lista-alunos-gestao">
+                                </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>🏋️ Enviar Treino</h3>
+                        <select id="select-aluno-treino"></select>
+                        <input type="text" id="t-dia" placeholder="Ex: Segunda-feira">
+                        <input type="text" id="t-titulo" placeholder="Ex: Hipertrofia A">
+                        <textarea id="t-desc" placeholder="Séries e Repetições..." rows="4"></textarea>
+                        <button class="btn-main" style="background: var(--secondary);" onclick="postarTreino()">Publicar para Aluno</button>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 40px;">📱 Mural de Acompanhamento</h3>
+                <div id="feed-treinos"></div>
+            </div>
+
+            <div id="view-student" class="hidden">
+                <h2>Minha Planilha de Treinos</h2>
+                <div id="meus-treinos"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Carrega dados ou inicia banco padrão
+        let db = JSON.parse(localStorage.getItem('fitDataV3')) || {
+            users: [{ name: 'Treinador', user: 'admin', pass: '123', role: 'coach' }],
+            workouts: []
+        };
+        let sessao = null;
+
+        // --- SISTEMA DE ACESSO ---
+        function autenticar() {
+            const u = document.getElementById('user-input').value.toLowerCase();
+            const p = document.getElementById('pass-input').value;
+            const encontrou = db.users.find(item => item.user === u && item.pass === p);
+            if (encontrou) { sessao = encontrou; iniciarApp(); } else { alert("Usuário ou senha incorretos!"); }
+        }
+
+        // --- GESTÃO DE USUÁRIOS (CRIAR E EXCLUIR) ---
+        function cadastrarUsuario() {
+            const nome = document.getElementById('reg-name').value;
+            const user = document.getElementById('reg-user').value.toLowerCase().trim();
+            const pass = document.getElementById('reg-pass').value;
+
+            if(!nome || !user || !pass) return alert("Preencha todos os campos!");
+
+            // VERIFICAÇÃO DE DUPLICIDADE
+            const existe = db.users.some(u => u.user === user);
+            if(existe) {
+                alert(`Erro: O usuário "${user}" já está cadastrado. Escolha outro login.`);
+                return;
+            }
+
+            db.users.push({ name: nome, user: user, pass: pass, role: 'student' });
+            salvar();
+            renderCoach();
+            
+            // Limpa campos
+            document.getElementById('reg-name').value = "";
+            document.getElementById('reg-user').value = "";
+            document.getElementById('reg-pass').value = "";
+        }
+
+        function excluirAluno(user) {
+            if(confirm(`Tem certeza que deseja remover o aluno "${user}"? Todos os treinos dele serão apagados.`)) {
+                // Remove o usuário
+                db.users = db.users.filter(u => u.user !== user);
+                // Remove os treinos dele (limpeza de banco)
+                db.workouts = db.workouts.filter(w => w.para !== user);
+                
+                salvar();
+                renderCoach();
+            }
+        }
+
+        // --- GESTÃO DE TREINOS ---
+        function postarTreino() {
+            const para = document.getElementById('select-aluno-treino').value;
+            const dia = document.getElementById('t-dia').value;
+            const titulo = document.getElementById('t-titulo').value;
+            const desc = document.getElementById('t-desc').value;
+
+            if(!para || !dia || !titulo) return alert("Selecione o aluno e o dia do treino!");
+            
+            db.workouts.push({
+                id: Date.now(),
+                para, dia, titulo, desc,
+                concluido: false,
+                feedback: ""
+            });
+            salvar();
+            renderCoach();
+            alert("Treino enviado com sucesso!");
+        }
+
+        function concluirTreino(id) {
+            const feedback = document.getElementById(`fb-${id}`).value;
+            const index = db.workouts.findIndex(w => w.id === id);
+            db.workouts[index].concluido = true;
+            db.workouts[index].feedback = feedback || "Treino concluído sem comentários.";
+            salvar();
+            renderStudent();
+        }
+
+        // --- RENDERIZAÇÃO ---
+        function renderCoach() {
+            // 1. Lista de Gestão (Excluir)
+            const listaGestao = document.getElementById('lista-alunos-gestao');
+            listaGestao.innerHTML = "";
+            const alunos = db.users.filter(u => u.role === 'student');
+            
+            if(alunos.length === 0) listaGestao.innerHTML = "<p style='color: gray; font-size: 13px;'>Nenhum aluno cadastrado.</p>";
+
+            alunos.forEach(a => {
+                listaGestao.innerHTML += `
+                    <div class="aluno-row">
+                        <span><strong>${a.name}</strong> <small>(${a.user})</small></span>
+                        <button class="btn-danger" onclick="excluirAluno('${a.user}')">Excluir</button>
+                    </div>
+                `;
+            });
+
+            // 2. Select de Alunos
+            const select = document.getElementById('select-aluno-treino');
+            select.innerHTML = '<option value="">Selecionar Aluno...</option>';
+            alunos.forEach(a => {
+                select.innerHTML += `<option value="${a.user}">${a.name}</option>`;
+            });
+
+            // 3. Feed de Treinos
+            const feed = document.getElementById('feed-treinos');
+            feed.innerHTML = "";
+            db.workouts.slice().reverse().forEach(w => {
+                const alunoNome = db.users.find(u => u.user === w.para)?.name || "Usuário Removido";
+                feed.innerHTML += `
+                    <div class="item-card">
+                        <span class="status-badge ${w.concluido ? 'status-concluido' : 'status-pendente'}">
+                            ${w.concluido ? 'Concluído ✅' : 'Pendente'}
+                        </span>
+                        <strong style="color: var(--primary)">${alunoNome}</strong>
+                        <h4 style="margin: 5px 0">${w.dia} - ${w.titulo}</h4>
+                        <p style="font-size: 14px;">${w.desc}</p>
+                        ${w.concluido ? `<div style="background: #f1f5f9; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 13px;"><b>Feedback:</b> ${w.feedback}</div>` : ''}
+                    </div>
+                `;
+            });
+        }
+
+        function renderStudent() {
+            const container = document.getElementById('meus-treinos');
+            container.innerHTML = "";
+            const meus = db.workouts.filter(w => w.para === sessao.user);
+            
+            if(meus.length === 0) container.innerHTML = "<p>Você não tem treinos no momento.</p>";
+
+            meus.slice().reverse().forEach(w => {
+                container.innerHTML += `
+                    <div class="item-card" style="border-left: 5px solid ${w.concluido ? 'var(--secondary)' : 'var(--primary)'}">
+                        <span class="status-badge ${w.concluido ? 'status-concluido' : 'status-pendente'}">
+                            ${w.concluido ? 'Concluído' : 'A fazer'}
+                        </span>
+                        <h4>${w.dia} - ${w.titulo}</h4>
+                        <p>${w.desc}</p>
+                        ${!w.concluido ? `
+                            <textarea id="fb-${w.id}" placeholder="Como foi o treino? (Opcional)" rows="2"></textarea>
+                            <button class="btn-main" style="background: var(--secondary)" onclick="concluirTreino(${w.id})">Marcar como Concluído</button>
+                        ` : `<p style="font-size: 13px; color: var(--gray)"><b>Seu feedback:</b> ${w.feedback}</p>`}
+                    </div>
+                `;
+            });
+        }
+
+        function iniciarApp() {
+            document.getElementById('login-page').classList.add('hidden');
+            document.getElementById('app-content').classList.remove('hidden');
+            document.getElementById('user-display').innerText = `Treinador: ${sessao.name}`;
+            if (sessao.role === 'coach') {
+                document.getElementById('view-coach').classList.remove('hidden');
+                renderCoach();
+            } else {
+                document.getElementById('user-display').innerText = `Aluno: ${sessao.name}`;
+                document.getElementById('view-student').classList.remove('hidden');
+                renderStudent();
+            }
+        }
+
+        function salvar() { localStorage.setItem('fitDataV3', JSON.stringify(db)); }
+    </script>
+</body>
+</html>
